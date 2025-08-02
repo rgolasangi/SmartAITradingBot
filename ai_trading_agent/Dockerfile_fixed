@@ -1,0 +1,51 @@
+# AI Trading Agent Backend Dockerfile (Fixed)
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p models/sentiment models/rl_agent logs static
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV FLASK_APP=src/api/trading_api.py
+ENV FLASK_ENV=production
+ENV PORT=5000
+
+# Expose port
+EXPOSE 5000
+
+# Health check with longer timeout and start period
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "Starting AI Trading Agent..."\n\
+echo "Waiting for dependencies..."\n\
+sleep 10\n\
+echo "Starting Flask application..."\n\
+exec python -m src.api.trading_api' > /app/start.sh && \
+    chmod +x /app/start.sh
+
+# Run the application
+CMD ["/app/start.sh"]
+
