@@ -1,0 +1,192 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  namespace: ai-trading
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: DATABASE_NAME
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: DATABASE_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: DATABASE_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data/pgdata
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        
+        # More lenient startup and liveness probes
+        startupProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trading_user
+            - -d
+            - ai_trading_db
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 20  # Allow 100 seconds for startup
+        
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trading_user
+            - -d
+            - ai_trading_db
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - trading_user
+            - -d
+            - ai_trading_db
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: init-script
+        configMap:
+          name: postgres-init-script
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ai-trading
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: ai-trading
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+  namespace: ai-trading
+data:
+  init.sql: |
+    -- AI Trading Agent Database Initialization Script
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    -- Create tables for market data
+    CREATE TABLE IF NOT EXISTS market_data (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        symbol VARCHAR(50) NOT NULL,
+        timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+        open_price DECIMAL(10,2),
+        high_price DECIMAL(10,2),
+        low_price DECIMAL(10,2),
+        close_price DECIMAL(10,2),
+        volume BIGINT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_market_data_symbol_timestamp ON market_data (symbol, timestamp);
+    
+    -- Create tables for trades
+    CREATE TABLE IF NOT EXISTS trades (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        symbol VARCHAR(50) NOT NULL,
+        trade_type VARCHAR(10) NOT NULL,
+        quantity INTEGER NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'pending'
+    );
+    
+    -- Create tables for portfolio
+    CREATE TABLE IF NOT EXISTS portfolio (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        symbol VARCHAR(50) NOT NULL,
+        quantity INTEGER NOT NULL,
+        avg_price DECIMAL(10,2) NOT NULL,
+        current_price DECIMAL(10,2),
+        pnl DECIMAL(10,2),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Create tables for risk metrics
+    CREATE TABLE IF NOT EXISTS risk_metrics (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        date DATE NOT NULL,
+        total_pnl DECIMAL(10,2),
+        max_drawdown DECIMAL(10,2),
+        sharpe_ratio DECIMAL(5,3),
+        var_95 DECIMAL(10,2),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO trading_user;
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO trading_user;
+

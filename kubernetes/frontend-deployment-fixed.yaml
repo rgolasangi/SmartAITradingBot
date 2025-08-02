@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-trading-frontend
+  namespace: ai-trading
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-trading-frontend
+  template:
+    metadata:
+      labels:
+        app: ai-trading-frontend
+    spec:
+      containers:
+        - name: ai-trading-frontend
+          image: gcr.io/YOUR_PROJECT_ID/ai-trading-frontend:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_SERVICE_HOST
+              value: "ai-trading-backend-service"
+            - name: BACKEND_SERVICE_PORT
+              value: "5000"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-trading-frontend-service
+  namespace: ai-trading
+spec:
+  selector:
+    app: ai-trading-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-trading-ingress
+  namespace: ai-trading
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: ai-trading-ip
+    networking.gke.io/managed-certificates: ai-trading-ssl-cert
+    kubernetes.io/ingress.class: gce
+spec:
+  rules:
+    - host: ai-trading.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-trading-frontend-service
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-trading-backend-service
+                port:
+                  number: 5000
+
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: ai-trading-ssl-cert
+  namespace: ai-trading
+spec:
+  domains:
+    - ai-trading.example.com
+
+
+

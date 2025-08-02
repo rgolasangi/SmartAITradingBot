@@ -1,0 +1,86 @@
+{
+  "total_tests": 13,
+  "passed_tests": 13,
+  "success_rate": 100.0,
+  "timestamp": "2025-07-21T22:54:00.063873",
+  "test_results": [
+    {
+      "test": "Health Check",
+      "success": true,
+      "message": "System is healthy",
+      "duration": 0.004119157791137695
+    },
+    {
+      "test": "Authentication",
+      "success": true,
+      "message": "Login successful",
+      "duration": 0.0023844242095947266
+    },
+    {
+      "test": "Market Sentiment",
+      "success": true,
+      "message": "Sentiment data retrieved",
+      "duration": 0.0020084381103515625
+    },
+    {
+      "test": "Options Chain",
+      "success": true,
+      "message": "Options data retrieved",
+      "duration": 0.0020432472229003906
+    },
+    {
+      "test": "Trading Signals",
+      "success": true,
+      "message": "Signal: BUY",
+      "duration": 0.0018737316131591797
+    },
+    {
+      "test": "Batch Signals",
+      "success": true,
+      "message": "Generated 2 signals",
+      "duration": 0.0018336772918701172
+    },
+    {
+      "test": "Risk Assessment",
+      "success": true,
+      "message": "Risk data retrieved",
+      "duration": 0.0018680095672607422
+    },
+    {
+      "test": "Portfolio Positions",
+      "success": true,
+      "message": "Position data retrieved",
+      "duration": 0.0018849372863769531
+    },
+    {
+      "test": "Order Management",
+      "success": true,
+      "message": "Order data retrieved",
+      "duration": 0.0016665458679199219
+    },
+    {
+      "test": "System Status",
+      "success": true,
+      "message": "Status: operational",
+      "duration": 0.00164031982421875
+    },
+    {
+      "test": "Model Performance",
+      "success": true,
+      "message": "Performance data retrieved",
+      "duration": 0.0016422271728515625
+    },
+    {
+      "test": "Analytics",
+      "success": true,
+      "message": "Analytics data retrieved",
+      "duration": 0.0016334056854248047
+    },
+    {
+      "test": "Concurrent Load",
+      "success": true,
+      "message": "Success rate: 100.0%",
+      "duration": 0.015999794006347656
+    }
+  ]
+}

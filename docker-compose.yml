@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-trading-postgres
+    environment:
+      POSTGRES_DB: ai_trading_db
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - ai-trading-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_user -d ai_trading_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ai-trading-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password_123}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - ai-trading-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI Trading Backend API
+  ai-trading-backend:
+    build:
+      context: ./ai_trading_agent
+      dockerfile: Dockerfile
+    container_name: ai-trading-backend
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql://trading_user:${POSTGRES_PASSWORD:-secure_password_123}@postgres:5432/ai_trading_db
+      
+      # Redis Configuration
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password_123}@redis:6379/0
+      
+      # Zerodha API Configuration
+      ZERODHA_API_KEY: ${ZERODHA_API_KEY}
+      ZERODHA_API_SECRET: ${ZERODHA_API_SECRET}
+      ZERODHA_ACCESS_TOKEN: ${ZERODHA_ACCESS_TOKEN}
+      
+      # Application Configuration
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:-your_secret_key_here}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      
+      # AI/ML Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_BASE: ${OPENAI_API_BASE}
+      
+      # Risk Management
+      MAX_DAILY_LOSS: ${MAX_DAILY_LOSS:-10000}
+      MAX_POSITION_SIZE: ${MAX_POSITION_SIZE:-100000}
+      
+      # Logging
+      LOG_LEVEL: INFO
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./ai_trading_agent/logs:/app/logs
+      - ./ai_trading_agent/models:/app/models
+    networks:
+      - ai-trading-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # AI Trading Frontend Dashboard
+  ai-trading-frontend:
+    build:
+      context: ./ai-trading-dashboard
+      dockerfile: Dockerfile
+    container_name: ai-trading-frontend
+    ports:
+      - "80:80"
+    networks:
+      - ai-trading-network
+    depends_on:
+      ai-trading-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  ai-trading-network:
+    driver: bridge
+

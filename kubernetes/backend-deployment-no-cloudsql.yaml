@@ -1,0 +1,215 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-trading-backend
+  namespace: ai-trading
+  labels:
+    app: ai-trading-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-trading-backend
+  template:
+    metadata:
+      labels:
+        app: ai-trading-backend
+    spec:
+      initContainers:
+      - name: wait-for-dependencies
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for PostgreSQL..."
+          until nc -z postgres-service.ai-trading.svc.cluster.local 5432; do
+            echo "PostgreSQL not ready, waiting..."
+            sleep 5
+          done
+          echo "PostgreSQL is ready!"
+          
+          echo "Waiting for Redis..."
+          until nc -z redis-service.ai-trading.svc.cluster.local 6379; do
+            echo "Redis not ready, waiting..."
+            sleep 5
+          done
+          echo "Redis is ready!"
+          
+          echo "All dependencies are ready!"
+      containers:
+      # Main application container
+      - name: ai-trading-backend
+        image: gcr.io/YOUR_PROJECT_ID/ai-trading-backend:latest
+        ports:
+        - containerPort: 5000
+        env:
+        # Database Configuration (direct connection to Kubernetes PostgreSQL)
+        - name: DATABASE_URL
+          value: "postgresql://trading_user:$(DATABASE_PASSWORD)@postgres-service.ai-trading.svc.cluster.local:5432/ai_trading_db"
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-db-password
+              key: password
+        
+        # Redis Configuration
+        - name: REDIS_URL
+          value: "redis://ai-trading-redis-master.ai-trading.svc.cluster.local:6379/0"
+        
+        # Application Configuration
+        - name: FLASK_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: FLASK_ENV
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: SECRET_KEY
+        - name: ADMIN_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: ADMIN_USERNAME
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: ADMIN_PASSWORD
+        
+        # Zerodha API Configuration
+        - name: ZERODHA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: ZERODHA_API_KEY
+              optional: true
+        - name: ZERODHA_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: ZERODHA_API_SECRET
+              optional: true
+        - name: ZERODHA_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: ZERODHA_ACCESS_TOKEN
+              optional: true
+        
+        # OpenAI Configuration
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: OPENAI_API_KEY
+              optional: true
+        - name: OPENAI_API_BASE
+          valueFrom:
+            secretKeyRef:
+              name: ai-trading-secrets
+              key: OPENAI_API_BASE
+              optional: true
+        
+        # Risk Management
+        - name: MAX_DAILY_LOSS
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: MAX_DAILY_LOSS
+        - name: MAX_POSITION_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: MAX_POSITION_SIZE
+        
+        # Logging
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: ai-trading-config
+              key: LOG_LEVEL
+        
+        volumeMounts:
+        - name: logs-volume
+          mountPath: /app/logs
+        - name: models-volume
+          mountPath: /app/models
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      
+      volumes:
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: backend-logs-pvc
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: backend-models-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-trading-backend-service
+  namespace: ai-trading
+spec:
+  selector:
+    app: ai-trading-backend
+  ports:
+  - port: 5000
+    targetPort: 5000
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-logs-pvc
+  namespace: ai-trading
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-models-pvc
+  namespace: ai-trading
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
